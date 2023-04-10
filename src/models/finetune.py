@@ -15,6 +15,17 @@ from src.models.utils import cosine_lr, torch_load, LabelSmoothing
 
 import src.datasets as datasets
 
+import wandb
+import gc
+
+def restrict_grad_dims(params, k=50):
+    for param in params:
+        if param.grad is not None:
+            if len(param.shape) == 2:
+                param.grad[:, k:] = 0.
+            else:
+                param.grad[k:] = 0.
+
 
 def finetune(args):
     assert args.load is not None, "Please provide the patch to a checkpoint through --load."
@@ -84,7 +95,18 @@ def finetune(args):
 
             loss = loss_fn(logits, labels)
 
+            # Train accuracy
+            pred = logits.argmax(dim=1, keepdim=True)
+            acc = pred.eq(labels.view_as(pred)).sum().item() / labels.size(0)
+
             loss.backward()
+
+            if args.wandb:
+                wandb.log({'train/loss_step':loss, 'step':step})
+                wandb.log({f'train/{args.train_dataset}_top1_acc': acc, 'step': step})
+
+            if args.restrict_grad_dims:
+                restrict_grad_dims(params, k=args.k)
 
             torch.nn.utils.clip_grad_norm_(params, 1.0)
 
@@ -115,6 +137,8 @@ def finetune(args):
         # Evaluate
         args.current_epoch = epoch
         eval_results = evaluate(image_classifier, args)
+
+        gc.collect()
 
     if args.save is not None:
         return model_path

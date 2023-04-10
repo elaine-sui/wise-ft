@@ -1,5 +1,9 @@
 import os
 
+import sys
+
+sys.path.append(os.getcwd())
+
 import numpy as np
 
 import torch
@@ -10,6 +14,39 @@ from src.models.modeling import ClassificationHead, ImageEncoder, ImageClassifie
 from src.models.utils import fisher_load
 from src.models.zeroshot import get_zeroshot_classifier
 from src.args import parse_arguments
+
+from datetime import datetime
+import wandb
+
+def modify_args(args):
+    date_str = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
+    args.datetime = date_str
+
+    model_name_safe = args.model.replace('/', '-')
+
+    train_dataset_str = args.train_dataset
+
+    args.exp_name = model_name_safe
+    if args.params_to_unfreeze is not None:
+        unfreeze_str = '_'.join(args.params_to_unfreeze)
+        args.exp_name += f"_unfreeze_{unfreeze_str}"
+    
+    if args.restrict_grad_dims:
+        args.exp_name += f"_restrict_k_{args.k}_dims"
+
+    args.exp_name += f"_{train_dataset_str}/{date_str}"
+
+    args.save_dir = os.path.join(args.save, train_dataset_str, args.datetime)
+    args.results_db = os.path.join(args.save_dir, args.results_db)
+
+    return args
+
+def wandb_init(args):
+    wandb.init(
+        name=args.exp_name,
+        project="wise-ft",
+        config=args
+    )
 
 
 def _merge(alpha, theta_0, theta_1, fishers, fisher_floor):
@@ -42,6 +79,13 @@ def _merge(alpha, theta_0, theta_1, fishers, fisher_floor):
 
 def wise_ft(args):
     assert args.save is not None, 'Please provide a path to store models'
+
+    # Modify args
+    args = modify_args(args)
+
+    # Wandb init
+    if args.wandb:
+        wandb_init(args)
     
     if args.load is None:
         # Build and save zero-shot model
@@ -49,12 +93,12 @@ def wise_ft(args):
         classification_head = get_zeroshot_classifier(args, image_encoder.model)
         delattr(image_encoder.model, 'transformer')
         classifier = ImageClassifier(image_encoder, classification_head, process_images=False)
-        zeroshot_checkpoint = os.path.join(args.save, 'zeroshot.pt')
+        zeroshot_checkpoint = os.path.join(args.save_dir, 'zeroshot.pt')
         classifier.save(zeroshot_checkpoint)
 
         # Standard fine-tuning
         args.load = zeroshot_checkpoint
-        args.save = os.path.join(args.save, 'finetuned')
+        args.save = os.path.join(args.save_dir, 'finetuned')
         finetuned_checkpoint = finetune(args)
     else:
         # No need to compute things from stratch
@@ -89,9 +133,10 @@ def wise_ft(args):
         finetuned.load_state_dict(theta)
 
         # save model
-        finetuned.save(os.path.join(args.save, f'wise_ft_alpha={alpha:.3f}.pt'))
+        finetuned.save(os.path.join(args.save_dir, f'wise_ft_alpha={alpha:.3f}.pt'))
 
         # evaluate
+        args.wandb = False # Don't log the actual metrics (just log console)
         evaluate(finetuned, args)
 
 

@@ -5,9 +5,12 @@ import torch
 import numpy as np
 
 from src.models import utils
+from src.models.utils import LabelSmoothing
 from src.datasets.common import get_dataloader, maybe_dictionarize
 
 import src.datasets as datasets
+
+import wandb
 
 
 def eval_single_dataset(image_classifier, dataset, args):
@@ -26,12 +29,18 @@ def eval_single_dataset(image_classifier, dataset, args):
     batched_data = enumerate(dataloader)
     device = args.device
 
+    if args.ls > 0:
+        loss_fn = LabelSmoothing(args.ls)
+    else:
+        loss_fn = torch.nn.CrossEntropyLoss()
+
     if hasattr(dataset, 'post_loop_metrics'):
         # keep track of labels, predictions and metadata
         all_labels, all_preds, all_metadata = [], [], []
 
     with torch.no_grad():
         top1, correct, n = 0., 0., 0.
+        total_loss = 0.
         for i, data in batched_data:
             data = maybe_dictionarize(data)
             x = data[input_key].to(device)
@@ -61,6 +70,8 @@ def eval_single_dataset(image_classifier, dataset, args):
                 all_preds.append(logits.cpu().clone().detach())
                 metadata = data['metadata'] if 'metadata' in data else image_paths
                 all_metadata.extend(metadata)
+            
+            total_loss += loss_fn(logits, y)
 
         top1 = correct / n
 
@@ -74,6 +85,9 @@ def eval_single_dataset(image_classifier, dataset, args):
             metrics = {}
     if 'top1' not in metrics:
         metrics['top1'] = top1
+    
+    if 'loss' not in metrics:
+        metrics['loss'] = total_loss
     
     return metrics
 
@@ -91,6 +105,10 @@ def evaluate(image_classifier, args):
         )
 
         results = eval_single_dataset(image_classifier, dataset, args)
+
+        if args.wandb:
+            metrics = {f'val/{dataset_name}_' + key : val for key, val in results.items()}
+            wandb.log(metrics)
 
         if 'top1' in results:
             print(f"{dataset_name} Top-1 accuracy: {results['top1']:.4f}")

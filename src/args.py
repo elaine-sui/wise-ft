@@ -136,6 +136,23 @@ def parse_arguments():
         default=1e-8,
         help="TODO",
     )
+
+    parser.add_argument(
+        "--params_to_unfreeze", type=lambda x: x.split(","), default=None, help='parameters to unfreeze during finetuning'
+    )
+
+    parser.add_argument(
+        "--wandb", action="store_true", default=False, help='add logging to wandb'
+    )
+
+    parser.add_argument(
+        "--restrict_grad_dims", action="store_true", default=False,
+    )
+
+    parser.add_argument(
+        "--k", type=int, default=50,
+    )
+
     parsed_args = parser.parse_args()
     parsed_args.device = "cuda" if torch.cuda.is_available() else "cpu"
     
