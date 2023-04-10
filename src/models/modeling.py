@@ -75,6 +75,35 @@ class ImageClassifier(torch.nn.Module):
         outputs = self.classification_head(inputs)
         return outputs
 
+    def freeze_all_except(self, params_to_unfreeze=['last']):
+
+        def has_name_starts_with_param(name, params_lst):
+            for p in params_lst:
+                if name.startswith(p):
+                    return True
+            
+            return False
+
+        # print([name for name, _ in self.image_encoder.named_parameters()])
+        
+        if 'last' in params_to_unfreeze:
+            params_to_unfreeze.remove('last')
+            params_to_unfreeze.append('model.token_embedding.weight')
+            params_to_unfreeze.extend(['model.visual.ln_post.weight', 'model.visual.ln_post.bias', 'model.ln_final.weight', 'model.ln_final.bias'])
+            # params_to_unfreeze.extend(['model.visual.transformer.resblocks.11.mlp.c_proj.weight', 'model.visual.transformer.resblocks.11.mlp.c_proj.bias', 'model.visual.transformer.resblocks.11.ln_2.weight'])
+        elif 'low' in params_to_unfreeze:
+            params_to_unfreeze.remove('low')
+            params_to_unfreeze.append('model.visual.transformer.resblocks.0.')
+        elif 'middle' in params_to_unfreeze:
+            params_to_unfreeze.remove('middle')
+            params_to_unfreeze.append('model.visual.transformer.resblocks.5.')
+
+        for name, param in self.image_encoder.named_parameters():
+            to_unfreeze = has_name_starts_with_param(name, params_to_unfreeze)
+            param.requires_grad_(to_unfreeze)
+            if to_unfreeze:
+                param.retain_grad()
+
     def save(self, filename):
         print(f'Saving image classifier to {filename}')
         utils.torch_save(self, filename)

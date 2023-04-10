@@ -37,6 +37,7 @@ def modify_args(args):
     args.exp_name += f"_{train_dataset_str}/{date_str}"
 
     args.save_dir = os.path.join(args.save, train_dataset_str, args.datetime)
+    args.save_zero_shot_dir = os.path.join(args.save, train_dataset_str)
     args.results_db = os.path.join(args.save_dir, args.results_db)
 
     return args
@@ -90,15 +91,16 @@ def wise_ft(args):
     if args.load is None:
         # Build and save zero-shot model
         image_encoder = ImageEncoder(args, keep_lang=True)
-        classification_head = get_zeroshot_classifier(args, image_encoder.model)
-        delattr(image_encoder.model, 'transformer')
-        classifier = ImageClassifier(image_encoder, classification_head, process_images=False)
-        zeroshot_checkpoint = os.path.join(args.save_dir, 'zeroshot.pt')
-        classifier.save(zeroshot_checkpoint)
+        zeroshot_checkpoint = os.path.join(args.save_zero_shot_dir, 'zeroshot.pt')
+
+        if not os.path.exists(zeroshot_checkpoint):
+            classification_head = get_zeroshot_classifier(args, image_encoder.model)
+            delattr(image_encoder.model, 'transformer')
+            classifier = ImageClassifier(image_encoder, classification_head, process_images=False)
+            classifier.save(zeroshot_checkpoint)
 
         # Standard fine-tuning
         args.load = zeroshot_checkpoint
-        args.save = os.path.join(args.save_dir, 'finetuned')
         finetuned_checkpoint = finetune(args)
     else:
         # No need to compute things from stratch

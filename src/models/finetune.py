@@ -49,6 +49,11 @@ def finetune(args):
         image_enc = None
         image_classifier.process_images = True
         print_every = 100
+
+    if args.params_to_unfreeze is not None:
+        model.freeze_all_except(args.params_to_unfreeze)
+
+        print([name for name, param in model.named_parameters() if param.requires_grad])
     
     dataset_class = getattr(datasets, args.train_dataset)
     dataset = dataset_class(
@@ -126,12 +131,12 @@ def finetune(args):
             image_classifier = model.module
 
         # Saving model
-        if args.save is not None:
-            os.makedirs(args.save, exist_ok=True)
-            model_path = os.path.join(args.save, f'checkpoint_{epoch+1}.pt')
+        if args.save_dir is not None:
+            os.makedirs(args.save_dir, exist_ok=True)
+            model_path = os.path.join(args.save_dir, f'checkpoint_{epoch+1}.pt')
             print('Saving model to', model_path)
             image_classifier.save(model_path)
-            optim_path = os.path.join(args.save, f'optim_{epoch+1}.pt')
+            optim_path = os.path.join(args.save_dir, f'optim_{epoch+1}.pt')
             torch.save(optimizer.state_dict(), optim_path)
 
         # Evaluate
@@ -140,7 +145,7 @@ def finetune(args):
 
         gc.collect()
 
-    if args.save is not None:
+    if args.save_dir is not None:
         return model_path
 
 
